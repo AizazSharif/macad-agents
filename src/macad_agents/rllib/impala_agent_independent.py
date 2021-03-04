@@ -15,6 +15,7 @@ from ray.rllib.models.catalog import ModelCatalog
 from ray.rllib.models.preprocessors import Preprocessor
 from ray.tune import register_env
 
+
 parser = argparse.ArgumentParser()
 parser.add_argument(
     "--env",
@@ -30,7 +31,7 @@ parser.add_argument(
     help="Disables comet logging. Used for local smoke tests")
 parser.add_argument(
     "--num-workers",
-    default=2,
+    default=1, #2
     type=int,
     help="Num workers (CPU cores) to use")
 parser.add_argument(
@@ -42,7 +43,7 @@ parser.add_argument(
     help="Number of samples in a batch per worker. Default=50")
 parser.add_argument(
     "--train-bs",
-    default=4,
+    default=250,
     type=int,
     help="Train batch size. Use as per available GPU mem. Default=500")
 parser.add_argument(
@@ -60,12 +61,12 @@ parser.add_argument(
     help="Model architecture to use. Default=mnih15")
 parser.add_argument(
     "--num-steps",
-    default=2000000,
+    default=10, #2000000
     type=int,
     help="Number of steps to train. Default=20M")
 parser.add_argument(
     "--num-iters",
-    default=20,
+    default=2, #20
     type=int,
     help="Number of training iterations. Default=20")
 parser.add_argument(
@@ -158,6 +159,7 @@ config = {
     # "preprocessor_pref": "deepmind",
 
     # env_config to be passed to env_creator
+    
     "env_config": env_actor_configs
 }
 # Common Agent config
@@ -231,10 +233,42 @@ config.update({
     0.5,  # Baseline loss scaling
     "entropy_coeff":
     -0.01,
+    "model": {
+    "custom_model": model_name,
+    "custom_options": {
+        # Custom notes for the experiment
+        "notes": {
+            "notes": args.notes
+        },
+    },
+    # NOTE:Wrappers are applied by RLlib if custom_preproc is NOT
+    # specified
+    "custom_preprocessor": "sq_im_84",
+    "dim": 84,
+    "free_log_std": False,  # if args.discrete_actions else True,
+    "grayscale": True,
+    # conv_filters to be used with the custom CNN model.
+    # "conv_filters": [[16, [4, 4], 2], [32, [3, 3], 2],
+    # [16, [3, 3], 2]]
+},
+# preproc_pref is ignored if custom_preproc is specified
+# "preprocessor_pref": "deepmind",
+
+# env_config to be passed to env_creator
+"env_config": env_actor_configs,
 })
 
 # config["env"] = tune.grid_search(["dm-" + env_id for env_id in env_names])
 # config["env"] = tune.grid_search([env_name for env_name in env_names])
+
+
+from pprint import pprint
+#pprint(config)
+
+
+
+
+
 
 if args.redis_address is not None:
     # num_gpus (& num_cpus) must not be provided when connecting to an
@@ -245,12 +279,37 @@ else:
 
 
 def default_policy():
-    return (VTracePolicyGraph, Box(0.0, 255.0, shape=(84, 84, 3)), Discrete(9),
-            {
-                "gamma": 0.99,
-                "use_lstm": args.use_lstm
-            })
+    env_actor_configs["env"]["render"] = False
 
+    config = {
+    # Model and preprocessor options.
+    "model": {
+        "custom_model": model_name,
+        "custom_options": {
+            # Custom notes for the experiment
+            "notes": {
+                "args": vars(args)
+            },
+        },
+        # NOTE:Wrappers are applied by RLlib if custom_preproc is NOT specified
+        "custom_preprocessor": "sq_im_84",
+        "dim": 84,
+        "free_log_std": False,  # if args.discrete_actions else True,
+        "grayscale": True,
+        # conv_filters to be used with the custom CNN model.
+        # "conv_filters": [[16, [4, 4], 2], [32, [3, 3], 2], [16, [3, 3], 2]]
+    },
+    # preproc_pref is ignored if custom_preproc is specified
+    # "preprocessor_pref": "deepmind",
+    "gamma": 0.99,
+    "use_lstm": args.use_lstm,
+    # env_config to be passed to env_creator
+    "env":{
+        "render": False
+    },
+    "env_config": env_actor_configs
+    }
+    return (VTracePolicyGraph, Box(0.0, 255.0, shape=(84, 84, 3)), Discrete(9),config)
 
 # Create a debugging friendly instance
 if args.debug:
@@ -295,7 +354,7 @@ else:
         checkpoint_freq=1000,
         checkpoint_at_end=True,
         resources_per_trial={
-            "cpu": 4,
+            "cpu": 2,
             "gpu": 1
         })
 
